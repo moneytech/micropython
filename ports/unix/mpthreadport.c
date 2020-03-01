@@ -34,8 +34,18 @@
 
 #if MICROPY_PY_THREAD
 
+#include <fcntl.h>
 #include <signal.h>
 #include <sched.h>
+#include <semaphore.h>
+
+// Some platforms don't have SIGRTMIN but if we do have it, use it to avoid
+// potential conflict with other uses of the more commonly used SIGUSR1.
+#ifdef SIGRTMIN
+#define MP_THREAD_GC_SIGNAL (SIGRTMIN + 5)
+#else
+#define MP_THREAD_GC_SIGNAL (SIGUSR1)
+#endif
 
 // this structure forms a linked list, one node per active thread
 typedef struct _thread_t {
@@ -53,13 +63,18 @@ STATIC thread_t *thread;
 
 // this is used to synchronise the signal handler of the thread
 // it's needed because we can't use any pthread calls in a signal handler
-STATIC volatile int thread_signal_done;
+#if defined(__APPLE__)
+STATIC char thread_signal_done_name[25];
+STATIC sem_t *thread_signal_done_p;
+#else
+STATIC sem_t thread_signal_done;
+#endif
 
 // this signal handler is used to scan the regs and stack of a thread
 STATIC void mp_thread_gc(int signo, siginfo_t *info, void *context) {
     (void)info; // unused
     (void)context; // unused
-    if (signo == SIGUSR1) {
+    if (signo == MP_THREAD_GC_SIGNAL) {
         void gc_collect_regs_and_stack(void);
         gc_collect_regs_and_stack();
         // We have access to the context (regs, stack) of the thread but it seems
@@ -67,10 +82,14 @@ STATIC void mp_thread_gc(int signo, siginfo_t *info, void *context) {
         // gc_collect_regs_and_stack function above
         //gc_collect_root((void**)context, sizeof(ucontext_t) / sizeof(uintptr_t));
         #if MICROPY_ENABLE_PYSTACK
-        void **ptrs = (void**)(void*)MP_STATE_THREAD(pystack_start);
-        gc_collect_root(ptrs, (MP_STATE_THREAD(pystack_cur) - MP_STATE_THREAD(pystack_start)) / sizeof(void*));
+        void **ptrs = (void **)(void *)MP_STATE_THREAD(pystack_start);
+        gc_collect_root(ptrs, (MP_STATE_THREAD(pystack_cur) - MP_STATE_THREAD(pystack_start)) / sizeof(void *));
         #endif
-        thread_signal_done = 1;
+        #if defined (__APPLE__)
+        sem_post(thread_signal_done_p);
+        #else
+        sem_post(&thread_signal_done);
+        #endif
     }
 }
 
@@ -85,12 +104,36 @@ void mp_thread_init(void) {
     thread->arg = NULL;
     thread->next = NULL;
 
+    #if defined(__APPLE__)
+    snprintf(thread_signal_done_name, sizeof(thread_signal_done_name), "micropython_sem_%d", (int)thread->id);
+    thread_signal_done_p = sem_open(thread_signal_done_name, O_CREAT | O_EXCL, 0666, 0);
+    #else
+    sem_init(&thread_signal_done, 0, 0);
+    #endif
+
     // enable signal handler for garbage collection
     struct sigaction sa;
     sa.sa_flags = SA_SIGINFO;
     sa.sa_sigaction = mp_thread_gc;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGUSR1, &sa, NULL);
+    sigaction(MP_THREAD_GC_SIGNAL, &sa, NULL);
+}
+
+void mp_thread_deinit(void) {
+    pthread_mutex_lock(&thread_mutex);
+    while (thread->next != NULL) {
+        thread_t *th = thread;
+        thread = thread->next;
+        pthread_cancel(th->id);
+        free(th);
+    }
+    pthread_mutex_unlock(&thread_mutex);
+    #if defined(__APPLE__)
+    sem_close(thread_signal_done_p);
+    sem_unlink(thread_signal_done_name);
+    #endif
+    assert(thread->id == pthread_self());
+    free(thread);
 }
 
 // This function scans all pointers that are external to the current thread.
@@ -109,24 +152,26 @@ void mp_thread_gc_others(void) {
         if (!th->ready) {
             continue;
         }
-        thread_signal_done = 0;
-        pthread_kill(th->id, SIGUSR1);
-        while (thread_signal_done == 0) {
-            sched_yield();
-        }
+        pthread_kill(th->id, MP_THREAD_GC_SIGNAL);
+        #if defined(__APPLE__)
+        sem_wait(thread_signal_done_p);
+        #else
+        sem_wait(&thread_signal_done);
+        #endif
     }
     pthread_mutex_unlock(&thread_mutex);
 }
 
 mp_state_thread_t *mp_thread_get_state(void) {
-    return (mp_state_thread_t*)pthread_getspecific(tls_key);
+    return (mp_state_thread_t *)pthread_getspecific(tls_key);
 }
 
-void mp_thread_set_state(void *state) {
+void mp_thread_set_state(mp_state_thread_t *state) {
     pthread_setspecific(tls_key, state);
 }
 
 void mp_thread_start(void) {
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
     pthread_mutex_lock(&thread_mutex);
     for (thread_t *th = thread; th != NULL; th = th->next) {
         if (th->id == pthread_self()) {
@@ -137,7 +182,7 @@ void mp_thread_start(void) {
     pthread_mutex_unlock(&thread_mutex);
 }
 
-void mp_thread_create(void *(*entry)(void*), void *arg, size_t *stack_size) {
+void mp_thread_create(void *(*entry)(void *), void *arg, size_t *stack_size) {
     // default stack size is 8k machine-words
     if (*stack_size == 0) {
         *stack_size = 8192 * BYTES_PER_WORD;
@@ -155,6 +200,11 @@ void mp_thread_create(void *(*entry)(void*), void *arg, size_t *stack_size) {
         goto er;
     }
     ret = pthread_attr_setstacksize(&attr, *stack_size);
+    if (ret != 0) {
+        goto er;
+    }
+
+    ret = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     if (ret != 0) {
         goto er;
     }
@@ -191,12 +241,18 @@ er:
 
 void mp_thread_finish(void) {
     pthread_mutex_lock(&thread_mutex);
-    // TODO unlink from list
+    thread_t *prev = NULL;
     for (thread_t *th = thread; th != NULL; th = th->next) {
         if (th->id == pthread_self()) {
-            th->ready = 0;
+            if (prev == NULL) {
+                thread = th->next;
+            } else {
+                prev->next = th->next;
+            }
+            free(th);
             break;
         }
+        prev = th;
     }
     pthread_mutex_unlock(&thread_mutex);
 }

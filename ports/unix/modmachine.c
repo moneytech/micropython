@@ -4,6 +4,7 @@
  * The MIT License (MIT)
  *
  * Copyright (c) 2013, 2014 Damien P. George
+ * Copyright (c) 2015 Paul Sokolovsky
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -48,7 +49,7 @@
 uintptr_t mod_machine_mem_get_addr(mp_obj_t addr_o, uint align) {
     uintptr_t addr = mp_obj_int_get_truncated(addr_o);
     if ((addr & (align - 1)) != 0) {
-        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_ValueError, "address %08x is not aligned to %d bytes", addr, align));
+        mp_raise_msg_varg(&mp_type_ValueError, "address %08x is not aligned to %d bytes", addr, align);
     }
     #if MICROPY_PLAT_DEV_MEM
     {
@@ -57,10 +58,11 @@ uintptr_t mod_machine_mem_get_addr(mp_obj_t addr_o, uint align) {
         static uintptr_t last_base = (uintptr_t)-1;
         static uintptr_t map_page;
         if (!fd) {
-            fd = open("/dev/mem", O_RDWR | O_SYNC);
-            if (fd == -1) {
+            int _fd = open("/dev/mem", O_RDWR | O_SYNC);
+            if (_fd == -1) {
                 mp_raise_OSError(errno);
             }
+            fd = _fd;
         }
 
         uintptr_t cur_base = addr & ~MICROPY_PAGE_MASK;
@@ -93,7 +95,7 @@ STATIC MP_DEFINE_CONST_DICT(machine_module_globals, machine_module_globals_table
 
 const mp_obj_module_t mp_module_machine = {
     .base = { &mp_type_module },
-    .globals = (mp_obj_dict_t*)&machine_module_globals,
+    .globals = (mp_obj_dict_t *)&machine_module_globals,
 };
 
 #endif // MICROPY_PY_MACHINE

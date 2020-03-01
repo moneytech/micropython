@@ -5,9 +5,9 @@
 #include "re1.5.h"
 
 #define INSERT_CODE(at, num, pc) \
-    ((code ? memmove(code + at + num, code + at, pc - at) : (void)0), pc += num)
+    ((code ? memmove(code + at + num, code + at, pc - at) : 0), pc += num)
 #define REL(at, to) (to - at - 2)
-#define EMIT(at, byte) (code ? (code[at] = byte) : (void)(at))
+#define EMIT(at, byte) (code ? (code[at] = byte) : (at))
 #define PC (prog->bytelen)
 
 static const char *_compilecode(const char *re, ByteProg *prog, int sizecode)
@@ -53,6 +53,9 @@ static const char *_compilecode(const char *re, ByteProg *prog, int sizecode)
             PC++; // Skip # of pair byte
             prog->len++;
             for (cnt = 0; *re != ']'; re++, cnt++) {
+                if (*re == '\\') {
+                    ++re;
+                }
                 if (!*re) return NULL;
                 EMIT(PC++, *re);
                 if (re[1] == '-' && re[2] != ']') {

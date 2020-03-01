@@ -19,7 +19,7 @@ If your cursor is all the way back at the beginning, pressing RETURN will then
 execute the code that you've entered. The following shows what you'd see
 after entering a for statement (the underscore shows where the cursor winds up):
 
-    >>> for i in range(3):
+    >>> for i in range(30):
     ...     _
 
 If you then enter an if statement, an additional level of indentation will be
@@ -58,9 +58,10 @@ Auto-completion
 
 While typing a command at the REPL, if the line typed so far corresponds to
 the beginning of the name of something, then pressing TAB will show
-possible things that could be entered. For example type ``m`` and press TAB
-and it should expand to ``machine``. Enter a dot ``.`` and press TAB again. You
-should see something like:
+possible things that could be entered. For example, first import the machine
+module by entering ``import machine`` and pressing RETURN.
+Then type ``m`` and press TAB and it should expand to ``machine``.
+Enter a dot ``.`` and press TAB again. You should see something like:
 
     >>> machine.
     __name__        info            unique_id       reset
@@ -102,7 +103,7 @@ For example:
     KeyboardInterrupt:
     >>>
 
-Paste Mode
+Paste mode
 ----------
 
 If you want to paste some code into your terminal window, the auto-indent feature
@@ -142,7 +143,7 @@ the auto-indent feature, and changes the prompt from ``>>>`` to ``===``. For exa
 Paste Mode allows blank lines to be pasted. The pasted text is compiled as if
 it were a file. Pressing Ctrl-D exits paste mode and initiates the compilation.
 
-Soft Reset
+Soft reset
 ----------
 
 A soft reset will reset the python interpreter, but tries not to reset the
@@ -151,7 +152,7 @@ method by which you're connected to the MicroPython board (USB-serial, or Wifi).
 You can perform a soft reset from the REPL by pressing Ctrl-D, or from your python
 code by executing: ::
 
-    raise SystemExit
+    machine.soft_reset()
 
 For example, if you reset your MicroPython board, and you execute a dir()
 command, you'd see something like this:
@@ -173,8 +174,8 @@ variables no longer exist:
 
 .. code-block:: python
 
-    PYB: sync filesystems
-    PYB: soft reboot
+    MPY: sync filesystems
+    MPY: soft reboot
     MicroPython v1.5-51-g6f70283-dirty on 2015-10-30; PYBv1.0 with STM32F405RG
     Type "help()" for more information.
     >>> dir()
@@ -195,7 +196,7 @@ So you can use the underscore to save the result in a variable. For example:
     15
     >>>
 
-Raw Mode
+Raw mode
 --------
 
 Raw mode is not something that a person would normally use. It is intended for

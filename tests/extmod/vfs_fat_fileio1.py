@@ -1,10 +1,6 @@
 try:
     import uerrno
-    try:
-        import uos_vfs as uos
-        open = uos.vfs_open
-    except ImportError:
-        import uos
+    import uos
 except ImportError:
     print("SKIP")
     raise SystemExit
@@ -35,9 +31,9 @@ class RAMFS:
 
     def ioctl(self, op, arg):
         #print("ioctl(%d, %r)" % (op, arg))
-        if op == 4:  # BP_IOCTL_SEC_COUNT
+        if op == 4:  # MP_BLOCKDEV_IOCTL_BLOCK_COUNT
             return len(self.data) // self.SEC_SIZE
-        if op == 5:  # BP_IOCTL_SEC_SIZE
+        if op == 5:  # MP_BLOCKDEV_IOCTL_BLOCK_SIZE
             return self.SEC_SIZE
 
 
@@ -91,10 +87,8 @@ with open("foo_file.txt") as f2:
 
     f2.seek(0, 1) # SEEK_CUR
     print(f2.read(1))
-    try:
-        f2.seek(1, 1) # SEEK_END
-    except OSError as e:
-        print(e.args[0] == uerrno.EOPNOTSUPP)
+    f2.seek(2, 1) # SEEK_CUR
+    print(f2.read(1))
 
     f2.seek(-2, 2) # SEEK_END
     print(f2.read(1))

@@ -60,8 +60,8 @@ STATIC mp_obj_t time_localtime(size_t n_args, const mp_obj_t *args) {
         rtc_init_finalise();
         RTC_DateTypeDef date;
         RTC_TimeTypeDef time;
-        HAL_RTC_GetTime(&RTCHandle, &time, FORMAT_BIN);
-        HAL_RTC_GetDate(&RTCHandle, &date, FORMAT_BIN);
+        HAL_RTC_GetTime(&RTCHandle, &time, RTC_FORMAT_BIN);
+        HAL_RTC_GetDate(&RTCHandle, &date, RTC_FORMAT_BIN);
         mp_obj_t tuple[8] = {
             mp_obj_new_int(2000 + date.Year),
             mp_obj_new_int(date.Month),
@@ -106,12 +106,12 @@ STATIC mp_obj_t time_mktime(mp_obj_t tuple) {
 
     // localtime generates a tuple of len 8. CPython uses 9, so we accept both.
     if (len < 8 || len > 9) {
-        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_TypeError, "mktime needs a tuple of length 8 or 9 (%d given)", len));
+        mp_raise_msg_varg(&mp_type_TypeError, "mktime needs a tuple of length 8 or 9 (%d given)", len);
     }
 
     return mp_obj_new_int_from_uint(timeutils_mktime(mp_obj_get_int(elem[0]),
-            mp_obj_get_int(elem[1]), mp_obj_get_int(elem[2]), mp_obj_get_int(elem[3]),
-            mp_obj_get_int(elem[4]), mp_obj_get_int(elem[5])));
+        mp_obj_get_int(elem[1]), mp_obj_get_int(elem[2]), mp_obj_get_int(elem[3]),
+        mp_obj_get_int(elem[4]), mp_obj_get_int(elem[5])));
 }
 MP_DEFINE_CONST_FUN_OBJ_1(time_mktime_obj, time_mktime);
 
@@ -123,8 +123,8 @@ STATIC mp_obj_t time_time(void) {
     rtc_init_finalise();
     RTC_DateTypeDef date;
     RTC_TimeTypeDef time;
-    HAL_RTC_GetTime(&RTCHandle, &time, FORMAT_BIN);
-    HAL_RTC_GetDate(&RTCHandle, &date, FORMAT_BIN);
+    HAL_RTC_GetTime(&RTCHandle, &time, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&RTCHandle, &date, RTC_FORMAT_BIN);
     return mp_obj_new_int(timeutils_seconds_since_2000(2000 + date.Year, date.Month, date.Date, time.Hours, time.Minutes, time.Seconds));
 }
 MP_DEFINE_CONST_FUN_OBJ_0(time_time_obj, time_time);
@@ -149,5 +149,5 @@ STATIC MP_DEFINE_CONST_DICT(time_module_globals, time_module_globals_table);
 
 const mp_obj_module_t mp_module_utime = {
     .base = { &mp_type_module },
-    .globals = (mp_obj_dict_t*)&time_module_globals,
+    .globals = (mp_obj_dict_t *)&time_module_globals,
 };
